@@ -15,6 +15,7 @@ RUN --mount=type=cache,target=/var/cache/apt \
     ffmpeg \
     ca-certificates \
     ninja-build \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -23,34 +24,21 @@ WORKDIR /app
 ENV VIRTUAL_ENV=/opt/venv
 RUN python3 -m venv $VIRTUAL_ENV --upgrade-deps
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+ENV CUDA_HOME=/usr/local/cuda
 
-# Upgrade pip first
+# Upgrade build tools
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --no-cache-dir --upgrade pip
+    pip install --no-cache-dir --upgrade pip setuptools wheel
 
-# Install Python dependencies with cached pip
+# Copy requirements first for cache optimization
 COPY requirements.txt .
 
-# Install base packages
+# Install all Python dependencies with build isolation disabled
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --no-cache-dir \
-    "numpy<2" \
-    python-multipart \
-    packaging
+    pip install --no-cache-dir --no-build-isolation -r requirements.txt \
+    --extra-index-url https://download.pytorch.org/whl/cu121
 
-# Install PyTorch with CUDA support
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --no-cache-dir \
-    torch==2.2.2+cu121 \
-    torchvision==0.17.2+cu121 \
-    torchaudio==2.2.2+cu121 \
-    --index-url https://download.pytorch.org/whl/cu121
-
-# Install remaining requirements
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --no-cache-dir -r requirements.txt
-
-# Copy application code (last step for optimal caching)
+# Copy application code
 COPY . .
 
 EXPOSE 8000

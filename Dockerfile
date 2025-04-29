@@ -1,7 +1,7 @@
 # Use the NVIDIA CUDA Ubuntu base image
-FROM nvidia/cuda:12.8.1-cudnn8-devel-ubuntu22.04
+FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
 
-# Enable apt caching for faster rebuilds
+# Configure APT and pip caching
 RUN rm -f /etc/apt/apt.conf.d/docker-clean && \
     echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache
 
@@ -10,7 +10,7 @@ RUN --mount=type=cache,target=/var/cache/apt \
     --mount=type=cache,target=/var/lib/apt \
     apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    python3 \
+    python3-venv \
     python3-pip \
     ffmpeg \
     ca-certificates \
@@ -19,19 +19,24 @@ RUN --mount=type=cache,target=/var/cache/apt \
 
 WORKDIR /app
 
+# Create and activate virtual environment
+ENV VIRTUAL_ENV=/opt/venv
+RUN python3 -m venv $VIRTUAL_ENV
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+
 # Install Python dependencies with cached pip
 COPY requirements.txt .
 
-# Install base packages first
+# Install base packages with break-system-packages flag
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip3 install --no-cache-dir \
+    pip install --no-cache-dir --break-system-packages \
     "numpy<2" \
     python-multipart \
     packaging
 
 # Install PyTorch with CUDA support
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip3 install --no-cache-dir \
+    pip install --no-cache-dir --break-system-packages \
     torch==2.2.2+cu121 \
     torchvision==0.17.2+cu121 \
     torchaudio==2.2.2+cu121 \
@@ -39,7 +44,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 # Install remaining requirements
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip3 install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir --break-system-packages -r requirements.txt
 
 # Copy application code (last step for optimal caching)
 COPY . .

@@ -1,5 +1,5 @@
 # Use the NVIDIA CUDA Debian runtime image
-FROM nvidia/cuda:12.2.0-runtime-debian12
+FROM nvidia/cuda:12.2.0-runtime
 
 # Install system dependencies (including ninja-build for flash-attn)
 RUN apt-get update && apt-get install -y --no-install-recommends \

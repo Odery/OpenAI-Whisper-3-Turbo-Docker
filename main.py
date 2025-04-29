@@ -51,6 +51,8 @@ async def lifespan(app: FastAPI):
 
         # Load processor
         processor = AutoProcessor.from_pretrained(MODEL_ID)
+        # Set pad_token_id to eos_token_id for the tokenizer
+        processor.tokenizer.pad_token_id = processor.tokenizer.eos_token_id
 
         # Build pipeline
         pipe = pipeline(

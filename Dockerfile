@@ -1,29 +1,31 @@
 # Use the NVIDIA CUDA Debian runtime image
 FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
 
-# Install system dependencies (including ninja-build for flash-attn)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3 python3-pip ffmpeg ca-certificates ninja-build && \
-    rm -rf /var/lib/apt/lists/*
+       python3 python3-pip ffmpeg ca-certificates ninja-build \
+    && rm -rf /var/lib/apt/lists/*
 
-# Set working directory
 WORKDIR /app
 
-# Copy Python requirements
+# Copy and pin Python packages
 COPY requirements.txt .
 
-# Install Python deps (ensure PyTorch CUDA version matches image)
-RUN pip3 install --no-cache-dir packaging \
- && pip3 install --no-cache-dir torch==2.2.2+cu121 torchvision==0.17.2+cu121 torchaudio==2.2.2+cu121 \
-     --index-url https://download.pytorch.org/whl/cu121 \
-     --extra-index-url https://pypi.org/simple \
- && pip3 install --no-cache-dir -r requirements.txt
+# First, install NumPy<2 and python-multipart alongside packaging
+RUN pip3 install --no-cache-dir \
+       "numpy<2" \
+       python-multipart \
+       packaging
 
-# Copy application code
+# Install PyTorch + friends (CUDA matched) and the rest
+RUN pip3 install --no-cache-dir \
+       torch==2.2.2+cu121 torchvision==0.17.2+cu121 torchaudio==2.2.2+cu121 \
+         --index-url https://download.pytorch.org/whl/cu121 \
+         --extra-index-url https://pypi.org/simple \
+    && pip3 install --no-cache-dir -r requirements.txt
+
+# Copy your code
 COPY . .
 
-# Expose the FastAPI port
 EXPOSE 8000
 
-# Entrypoint: launch Uvicorn
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

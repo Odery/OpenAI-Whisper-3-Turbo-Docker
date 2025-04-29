@@ -33,10 +33,20 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # Copy requirements first for cache optimization
 COPY requirements.txt .
 
-# Install all Python dependencies with build isolation disabled
+# (a) Install torch / torchaudio / torchvision first
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --no-cache-dir --no-build-isolation -r requirements.txt \
-    --extra-index-url https://download.pytorch.org/whl/cu121
+    pip install --no-cache-dir \
+        torch==2.2.2+cu121 \
+        torchaudio==2.2.2+cu121 \
+        torchvision==0.17.2+cu121 \
+        --extra-index-url https://download.pytorch.org/whl/cu121
+
+# (b) Then install everything else (including flash-attn)
+COPY requirements.txt .
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --no-cache-dir --no-build-isolation \
+        -r requirements.txt \
+        --extra-index-url https://download.pytorch.org/whl/cu121
 
 # Copy application code
 COPY . .

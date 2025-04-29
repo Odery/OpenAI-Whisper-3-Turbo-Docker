@@ -1,5 +1,5 @@
 # Use the NVIDIA CUDA Debian runtime image
-FROM nvidia/cuda:12.2.0-runtime-ubuntu22.04
+FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
 
 # Install system dependencies (including ninja-build for flash-attn)
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -13,7 +13,11 @@ WORKDIR /app
 COPY requirements.txt .
 
 # Install Python deps (ensure PyTorch CUDA version matches image)
-RUN pip3 install --no-cache-dir -r requirements.txt
+RUN pip3 install --no-cache-dir packaging \
+ && pip3 install --no-cache-dir torch==2.2.2+cu121 torchvision==0.17.2+cu121 torchaudio==2.2.2+cu121 \
+     --index-url https://download.pytorch.org/whl/cu121 \
+     --extra-index-url https://pypi.org/simple \
+ && pip3 install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY . .

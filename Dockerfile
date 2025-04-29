@@ -1,5 +1,5 @@
 # Use the NVIDIA CUDA Debian runtime image
-FROM nvidia/cuda:12.8.1-cudnn-devel-rockylinux8
+FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu22.04
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
        python3 python3-pip ffmpeg ca-certificates ninja-build \

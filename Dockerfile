@@ -21,22 +21,26 @@ WORKDIR /app
 
 # Create and activate virtual environment
 ENV VIRTUAL_ENV=/opt/venv
-RUN python3 -m venv $VIRTUAL_ENV
+RUN python3 -m venv $VIRTUAL_ENV --upgrade-deps
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+
+# Upgrade pip first
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --no-cache-dir --upgrade pip
 
 # Install Python dependencies with cached pip
 COPY requirements.txt .
 
-# Install base packages with break-system-packages flag
+# Install base packages
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --no-cache-dir --break-system-packages \
+    pip install --no-cache-dir \
     "numpy<2" \
     python-multipart \
     packaging
 
 # Install PyTorch with CUDA support
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --no-cache-dir --break-system-packages \
+    pip install --no-cache-dir \
     torch==2.2.2+cu121 \
     torchvision==0.17.2+cu121 \
     torchaudio==2.2.2+cu121 \
@@ -44,7 +48,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 # Install remaining requirements
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --no-cache-dir --break-system-packages -r requirements.txt
+    pip install --no-cache-dir -r requirements.txt
 
 # Copy application code (last step for optimal caching)
 COPY . .

@@ -3,6 +3,7 @@ from typing import Optional, cast
 import numpy as np
 import torch
 import ffmpeg
+import subprocess  # Add missing import
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.responses import JSONResponse
 from transformers import AutomaticSpeechRecognitionPipeline, AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
@@ -16,17 +17,15 @@ CHUNK_LENGTH = 30
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 TORCH_DTYPE = torch.float16 if DEVICE == "cuda" else torch.float32
 
-# Global components with type hints
+# Global components
 model: Optional[AutoModelForSpeechSeq2Seq] = None
 processor: Optional[AutoProcessor] = None
 pipe: Optional[AutomaticSpeechRecognitionPipeline] = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Lifespan handler for model initialization and cleanup"""
+    """Lifespan handler for model management"""
     global model, processor, pipe
-
-    # Initialize model
     try:
         model = AutoModelForSpeechSeq2Seq.from_pretrained(
             MODEL_ID,
@@ -54,33 +53,34 @@ async def lifespan(app: FastAPI):
             )
         )
 
-        # Warmup with correct input type
+        # Warmup with correct input format
         warmup_audio = np.random.rand(SAMPLE_RATE).astype(np.float32)
         pipe(warmup_audio, sampling_rate=SAMPLE_RATE)
 
     except Exception as e:
         raise RuntimeError(f"Initialization failed: {str(e)}")
 
-    yield  # App is running
+    yield
 
     # Cleanup
     del model, processor, pipe
-    torch.cuda.empty_cache()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
 app = FastAPI(lifespan=lifespan)
 
 def convert_audio(input_path: str) -> np.ndarray:
-    """Convert audio to 16kHz mono float32 numpy array"""
+    """Convert audio to numpy array using FFmpeg"""
     try:
         out, _ = (
             ffmpeg.input(input_path)
-            .output('pipe:', format='s16le', ac=1, ar=SAMPLE_RATE)
+            .output('pipe:', format='f32le', ac=1, ar=SAMPLE_RATE)
             .run(capture_stdout=True, quiet=True)
         )
-        audio_array = np.frombuffer(out, dtype=np.int16)
-        return audio_array.astype(np.float32) / 32768.0
-    except ffmpeg.Error as e:
-        raise RuntimeError(f"FFmpeg error: {e.stderr.decode()}")
+        return np.frombuffer(out, dtype=np.float32)
+    except subprocess.CalledProcessError as e:  # Handle correct error type
+        error_msg = e.stderr.decode('utf-8', errors='replace') if e.stderr else 'Unknown FFmpeg error'
+        raise RuntimeError(f"FFmpeg processing failed: {error_msg}")
 
 @app.post("/transcribe")
 async def transcribe_audio(
@@ -102,7 +102,7 @@ async def transcribe_audio(
         # Process audio
         audio_array = convert_audio(temp_path)
 
-        # Type-checked pipeline execution
+        # Execute pipeline
         result = pipe(
             audio_array,
             sampling_rate=SAMPLE_RATE,

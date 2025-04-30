@@ -65,18 +65,20 @@ async def lifespan(app: FastAPI):
 
         # Load processor (tokenizer + feature_extractor)
         processor = AutoProcessor.from_pretrained(MODEL_ID)
-        processor.tokenizer.pad_token_id = processor.tokenizer.eos_token_id  # Critical fix
+        processor.tokenizer.pad_token_id = processor.tokenizer.eos_token_id
 
         # Build pipeline with explicit tokenizer & feature extractor
         pipe = pipeline(
             "automatic-speech-recognition",
-            model=model.to(DEVICE),  # Force device placement
+            model=model,
             tokenizer=processor.tokenizer,
             feature_extractor=processor.feature_extractor,
             chunk_length_s=CHUNK_LENGTH,
             device=0 if DEVICE == "cuda" else -1,
             torch_dtype=TORCH_DTYPE,
-            model_kwargs={"use_flash_attention_2": True} if attn_impl else {}
+            # Add these kwargs:
+            model_kwargs={"use_flash_attention_2": True} if attn_impl else {},
+            tokenizer_kwargs={"padding": True}  # Required for pad_token_id
         )
 
         if DEVICE == "cuda":

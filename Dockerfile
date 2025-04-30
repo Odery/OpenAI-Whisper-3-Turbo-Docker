@@ -36,6 +36,8 @@ COPY requirements.txt .
 # (a) Install torch / torchaudio / torchvision first
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --no-cache-dir \
+        numpy==1.26.4 \
+        python-multipart==0.0.7 \
         torch==2.2.2+cu121 \
         torchaudio==2.2.2+cu121 \
         torchvision==0.17.2+cu121 \

@@ -32,13 +32,26 @@ async def lifespan(app: FastAPI):
     """Startup/shutdown events for loading and unloading the Whisper model."""
     global model, processor, pipe
     try:
+        # Determine attention implementation only if flash_attn is installed
+        attn_impl = None
+        try:
+            import flash_attn  # noqa: F401
+            attn_impl = "flash_attention_2"
+        except ImportError:
+            attn_impl = None
+
         # Load model
+        model_kwargs = {
+            "torch_dtype": TORCH_DTYPE,
+            "low_cpu_mem_usage": True,
+            "use_safetensors": True
+        }
+        if attn_impl:
+            model_kwargs["attn_implementation"] = attn_impl
+
         model = AutoModelForSpeechSeq2Seq.from_pretrained(
             MODEL_ID,
-            torch_dtype=TORCH_DTYPE,
-            low_cpu_mem_usage=True,
-            use_safetensors=True,
-            attn_implementation="flash_attention_2"
+            **model_kwargs
         ).to(DEVICE)
 
         # (Optional) BetterTransformer speedup
@@ -46,40 +59,38 @@ async def lifespan(app: FastAPI):
             from optimum.bettertransformer import BetterTransformer
             model = BetterTransformer.transform(model)
         except ImportError:
-            # optimum[bettertransformer] not installed; skip
             pass
 
-        # Load processor
+        # Load processor (tokenizer + feature_extractor)
         processor = AutoProcessor.from_pretrained(MODEL_ID)
-        # Set pad_token_id to eos_token_id for the tokenizer
-        processor.tokenizer.pad_token_id = processor.tokenizer.eos_token_id
 
-        # Build pipeline
+        # Build pipeline with explicit tokenizer & feature extractor
         pipe = pipeline(
             "automatic-speech-recognition",
             model=model,
-            tokenizer=processor,          # processor handles tokenization
-            feature_extractor=processor,  # and feature extraction
+            tokenizer=processor.tokenizer,
+            feature_extractor=processor.feature_extractor,
             chunk_length_s=CHUNK_LENGTH,
             device=0 if DEVICE == "cuda" else -1,
             torch_dtype=TORCH_DTYPE
         )
 
-        # Warmup call
+        # Warmup (no sampling_rate argument needed)
         warmup_audio = np.random.rand(SAMPLE_RATE).astype(np.float32)
-        pipe(warmup_audio, sampling_rate=SAMPLE_RATE)
+        pipe(warmup_audio)
 
     except Exception as e:
         raise RuntimeError(f"Failed to initialize ASR pipeline: {e}")
 
-    yield  # app is ready
+    yield
 
-    # Cleanup on shutdown
+    # Cleanup
     del model, processor, pipe
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
 app = FastAPI(lifespan=lifespan)
+
 
 def convert_audio(input_path: str) -> np.ndarray:
     """Use ffmpeg to read and convert audio into a float32 numpy array."""
@@ -105,24 +116,18 @@ async def transcribe_audio(
 
     temp_path = None
     try:
-        # Save upload to temp file
         with tempfile.NamedTemporaryFile(delete=False) as tmp:
             audio_file.file.seek(0)
             tmp.write(await audio_file.read())
             temp_path = tmp.name
 
-        # Convert to numpy array
         audio_array = convert_audio(temp_path)
-
-        # Run recognition
         result = pipe(
             audio_array,
-            sampling_rate=SAMPLE_RATE,
             generate_kwargs={
                 "task": task,
                 "language": language,
                 "max_new_tokens": 128,
-                # Whisper doesn't accept list temps: use single float
                 "temperature": 0.0
             }
         )
@@ -134,6 +139,7 @@ async def transcribe_audio(
     finally:
         if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
+        torch.cuda.empty_cache()  # Force CUDA memory cleanup
 
 @app.get("/health")
 async def health_check() -> JSONResponse:
@@ -143,3 +149,8 @@ async def health_check() -> JSONResponse:
         "dtype": str(TORCH_DTYPE),
         "model": MODEL_ID
     })
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

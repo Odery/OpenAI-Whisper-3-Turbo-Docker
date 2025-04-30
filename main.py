@@ -29,9 +29,6 @@ pipe: Optional[AutomaticSpeechRecognitionPipeline] = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    if DEVICE == "cuda":
-        assert torch.cuda.is_available(), "CUDA not available despite DEVICE=cuda"
-        print(f"CUDA device: {torch.cuda.get_device_name(0)}")
     """Startup/shutdown events for loading and unloading the Whisper model."""
     global model, processor, pipe
     try:
@@ -55,7 +52,9 @@ async def lifespan(app: FastAPI):
         model = AutoModelForSpeechSeq2Seq.from_pretrained(
             MODEL_ID,
             **model_kwargs
-        ).to(DEVICE)
+        )
+        model.to(DEVICE)  # <-- Explicit device placement
+        print(f"Model device: {next(model.parameters()).device}")  # <-- Verification
 
         # (Optional) BetterTransformer speedup
         try:
@@ -66,7 +65,7 @@ async def lifespan(app: FastAPI):
 
         # Load processor (tokenizer + feature_extractor)
         processor = AutoProcessor.from_pretrained(MODEL_ID)
-        processor.tokenizer.pad_token_id = processor.tokenizer.eos_token_id  # Set pad token
+        processor.tokenizer.pad_token_id = processor.tokenizer.eos_token_id  # Critical fix
 
         # Build pipeline with explicit tokenizer & feature extractor
         pipe = pipeline(
@@ -79,6 +78,10 @@ async def lifespan(app: FastAPI):
             torch_dtype=TORCH_DTYPE,
             model_kwargs={"use_flash_attention_2": True} if attn_impl else {}
         )
+
+        if DEVICE == "cuda":
+            assert torch.cuda.is_available(), "CUDA not available despite DEVICE=cuda"
+        print(f"CUDA device: {torch.cuda.get_device_name(0)}")
 
         # Warmup (no sampling_rate argument needed)
         warmup_audio = np.random.rand(SAMPLE_RATE).astype(np.float32)

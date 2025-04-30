@@ -29,6 +29,9 @@ pipe: Optional[AutomaticSpeechRecognitionPipeline] = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if DEVICE == "cuda":
+        assert torch.cuda.is_available(), "CUDA not available despite DEVICE=cuda"
+        print(f"CUDA device: {torch.cuda.get_device_name(0)}")
     """Startup/shutdown events for loading and unloading the Whisper model."""
     global model, processor, pipe
     try:
@@ -63,16 +66,18 @@ async def lifespan(app: FastAPI):
 
         # Load processor (tokenizer + feature_extractor)
         processor = AutoProcessor.from_pretrained(MODEL_ID)
+        processor.tokenizer.pad_token_id = processor.tokenizer.eos_token_id  # Set pad token
 
         # Build pipeline with explicit tokenizer & feature extractor
         pipe = pipeline(
             "automatic-speech-recognition",
-            model=model,
+            model=model.to(DEVICE),  # Force device placement
             tokenizer=processor.tokenizer,
             feature_extractor=processor.feature_extractor,
             chunk_length_s=CHUNK_LENGTH,
             device=0 if DEVICE == "cuda" else -1,
-            torch_dtype=TORCH_DTYPE
+            torch_dtype=TORCH_DTYPE,
+            model_kwargs={"use_flash_attention_2": True} if attn_impl else {}
         )
 
         # Warmup (no sampling_rate argument needed)
